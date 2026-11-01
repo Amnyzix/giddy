@@ -2,9 +2,9 @@ import argparse
 import subprocess
 import sys
 
+from giddy.config import init_config
 from giddy.git import get_current_branch, get_modified_files
 from giddy.ui import show_dashboard, show_error
-from giddy.utils import init_config
 from giddy.workflows import (
     amend_workflow,
     commit_workflow,

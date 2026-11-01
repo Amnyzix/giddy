@@ -1,11 +1,6 @@
 import re
 from pathlib import Path
 
-try:
-    import tomllib
-except ImportError:
-    pass
-
 
 def clean_branch_name(branch_type: str, raw_name: str) -> str:
     """
@@ -20,40 +15,6 @@ def clean_branch_name(branch_type: str, raw_name: str) -> str:
         return ""
 
     return f"{branch_type}/{clean_name}"
-
-
-def load_config() -> dict:
-    """
-    Load configuration from .giddy.toml if it exists.
-    Returns an empty dict if the file is missing or invalid.
-    """
-    config_path = Path(".giddy.toml")
-    if not config_path.is_file():
-        return {}
-
-    try:
-        with open(config_path, "rb") as f:
-            return tomllib.load(f)
-    except Exception:
-        return {}
-
-
-def init_config() -> None:
-    """Generate a default .giddy.toml configuration file."""
-    config_path = Path(".giddy.toml")
-    if config_path.exists():
-        print("\n⚠️  Configuration file .giddy.toml already exists!")
-        return
-
-    default_config = """[core]
-base_branch = "main"
-
-[commits]
-scopes = ["api", "ui", "cli", "docs", "tests", "core"]
-"""
-    with open(config_path, "w") as f:
-        f.write(default_config)
-    print("\n✅ Created default .giddy.toml configuration file!")
 
 
 def append_to_gitignore(file_path: str) -> None:
