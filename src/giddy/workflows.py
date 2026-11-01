@@ -1,4 +1,4 @@
-from giddy.cli import ask_version_bump
+from giddy.config import load_config
 from giddy.git import (
     commit_amend,
     commit_changes,
@@ -36,6 +36,7 @@ from giddy.ui import (
     ask_stash_preference,
     ask_tag_message,
     ask_undo_confirmation,
+    ask_version_bump,
     show_error,
     show_info,
     show_pr_link,
@@ -43,7 +44,7 @@ from giddy.ui import (
     show_success,
     show_warning,
 )
-from giddy.utils import append_to_gitignore, clean_branch_name, load_config
+from giddy.utils import append_to_gitignore, clean_branch_name
 
 # -------------------------------------------------------------------
 # SHARED SUB-WORKFLOWS (Stash management)
@@ -63,31 +64,28 @@ def handle_uncommitted_changes(
         show_warning("Operation cancelled. You are still on your current branch.")
         return False, False, False
 
-    bring_changes = "Take them" in action
+    if "Take them" in action:
+        # Git naturally carries uncommitted changes when switching branches;
+        # no stash is needed. Changes will be present on the new branch.
+        show_info("Your changes will be carried to the new branch.")
+        return True, False, False
 
+    # "Leave them (stash)" — stash without popping on the new branch
     show_info("Stashing changes (git stash)...")
     stash_push(f"Giddy auto-stash from {current_branch}")
 
-    return True, bring_changes, True
+    return True, False, True
 
 
 def restore_stashed_changes(
     stashed: bool, bring_changes: bool, original_branch: str
 ) -> None:
-    """Restore stashed changes if needed."""
-    if stashed and bring_changes:
-        show_step("Restoring your changes (git stash pop)...", icon="✨")
-        if stash_pop():
-            show_success("Changes restored successfully!")
-        else:
-            show_warning(
-                "Potential conflict during restoration!\n   Your files are here, but run 'giddy status' to verify."
-            )
-
-    elif stashed and not bring_changes:
+    """Show stash retrieval instructions if changes were stashed."""
+    if stashed:
         show_info("Your previous changes are safely stored in the stash.")
         show_info(
-            f"You can retrieve them later by returning to '{original_branch}' and running 'git stash pop'."
+            f"You can retrieve them later by returning to '{original_branch}'"
+            " and running 'git stash pop'."
         )
 
 
@@ -179,6 +177,7 @@ def commit_workflow() -> None:
 
     config = load_config()
     defined_scopes = config.get("commits", {}).get("scopes", [])
+    base_branch = config.get("core", {}).get("base_branch", "main")
     commit_message = ask_commit_details(defined_scopes)
 
     show_step(f"Staging {len(files_to_stage)} selected file(s)...", icon="📦")
@@ -195,16 +194,19 @@ def commit_workflow() -> None:
     if push_head():
         show_success("Done! Your code is safely pushed.")
 
-        # Display PR Link if not on main
+        # Display PR Link if not on the base branch
         branch = get_current_branch()
-        if branch not in ["main", "master"]:
+        if branch not in ["main", "master", base_branch]:
             repo_url, provider = get_remote_repo_info()
             if repo_url:
                 if provider == "github":
-                    pr_url = f"{repo_url}/compare/main...{branch}?expand=1"
+                    pr_url = f"{repo_url}/compare/{base_branch}...{branch}?expand=1"
                     show_pr_link(pr_url, "Pull Request")
                 elif provider == "gitlab":
-                    pr_url = f"{repo_url}/-/merge_requests/new?merge_request[source_branch]={branch}"
+                    pr_url = (
+                        f"{repo_url}/-/merge_requests/new"
+                        f"?merge_request[source_branch]={branch}"
+                    )
                     show_pr_link(pr_url, "Merge Request")
     else:
         show_error("Failed to push changes.")
@@ -212,6 +214,18 @@ def commit_workflow() -> None:
 
 def sync_workflow() -> None:
     """Workflow for 'giddy sync'"""
+    # Guard: refuse to switch if the working directory is dirty
+    current_branch = get_current_branch()
+    files = get_modified_files()
+    if files:
+        show_warning(
+            f"You have {len(files)} modified file(s) on branch '{current_branch}'."
+        )
+        show_info(
+            "Please commit them with 'giddy done' or stash them before syncing."
+        )
+        return
+
     config = load_config()
     base_branch = config.get("core", {}).get("base_branch", "main")
 
@@ -351,7 +365,7 @@ def tag_workflow() -> None:
 
     # 2. Le Garde-fou (Optionnel mais recommandé) : Vérifier la branche
     config = load_config()
-    base_branch = config.get("base_branch", "main")
+    base_branch = config.get("core", {}).get("base_branch", "main")
     current_branch = get_current_branch()
 
     if current_branch != base_branch:
